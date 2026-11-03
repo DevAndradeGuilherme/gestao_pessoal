@@ -1,0 +1,50 @@
+# Segredos e ambientes
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+token.json
+secrets/
+
+# Python / FastAPI
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Ambiente local e editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+logs/
+
+# Infra e sessões
+*.sqlite3
+*.db
+.evolution/
+.sessions/
+sessions/
+redis-data/
+
+# Observação: migrations e lockfiles DEVEM ser versionados.
