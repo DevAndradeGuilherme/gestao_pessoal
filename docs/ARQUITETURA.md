@@ -1,6 +1,6 @@
 # Arquitetura — visão técnica inicial
 
-**Estado:** arquitetura macro aprovada; detalhes de API, schema e deployment ainda serão produzidos nas tarefas F0/F1.
+**Estado:** arquitetura macro aprovada; estrutura física de pacotes, convenções de API e ownership definidas em GP-02 (`backend/README.md`, `docs/CONTRATOS.md` §4–8). Schema e deployment serão produzidos em F1/F4.
 
 ## Diagrama lógico
 
@@ -48,7 +48,7 @@ flowchart LR
 
 ## Pontos técnicos a definir nas tarefas
 
-- Estrutura física de pacotes, padrões de dependência e migração de banco.
+- Padrão de migração de banco (GP-03).
 - Esquemas concretos, endpoints, política de autorização e versão das bibliotecas.
 - Representação validável de recorrência (inclusive último dia do mês).
 - Estratégia de tokens Google, retry/backoff, reconciliação e observabilidade.

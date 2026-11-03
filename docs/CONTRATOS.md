@@ -1,6 +1,7 @@
 # Contratos técnicos compartilhados
 
-**Estado:** contrato de responsabilidade e semântica definido; formatos e endpoints concretos **a estabelecer em GP-02**. Este arquivo **não descreve API já implementada**.
+**Estado:** contratos iniciais aprovados em GP-02 (03/11/2026). Seções 1–3 definem semântica; seções 4–10 definem formatos e fronteiras técnicas.
+**Implementado até agora:** somente os health checks, o envelope de erro e o `X-Request-ID` (seção 9). Rotas de negócio citadas como exemplo **não existem** até a tarefa responsável entregá-las.
 
 ## 1. Responsabilidades dos canais
 
@@ -29,18 +30,138 @@
 - Mensagem ambígua: perguntar antes de persistir operação irreversível.
 - Falha externa: manter registro local, expor falha/pendência e reconciliar.
 
-## 4. Contratos concretos a aprovar em GP-02
+## 4. Convenções da API HTTP
 
-- [ ] Convenção de nomes/versão dos endpoints (rotas **não definidas ainda**).
-- [ ] Schemas de request/response, paginação, filtros, erros e validação.
-- [ ] Contrato de identidade entre Supabase Auth e FastAPI.
-- [ ] Estratégia de migrations e schemas com isolamento por usuário.
-- [ ] Comandos/eventos de integração, outbox ou mecanismo equivalente, idempotência e sync status.
-- [ ] Schemas de interpretação de IA, estados de conversação e desambiguação.
-- [ ] Representação de recorrência e semântica de fuso/DST.
-- [ ] Formato de payloads internos dos workers e política de retries.
-- [ ] Limites de edição por pasta, responsáveis e política de versionamento de contratos.
+- **Base versionada:** `/api/v1`. Mudança incompatível exige `/api/v2` ou janela de transição registrada em `docs/DECISOES.md`. Health checks ficam fora da versão (`/health`).
+- **Recursos:** substantivos em inglês, plural, `kebab-case`, alinhados aos nomes do `CONTEXTO.md` §5 (ex.: `/api/v1/appointments`, `/api/v1/tasks/{task_id}`). Rotas concretas são definidas por GP-04.
+- **Ações de estado** que não são edição simples usam sub-recurso verbal: `POST /api/v1/tasks/{task_id}/complete`, `.../reopen`, `.../cancel` (exemplos; GP-04 confirma). Cancelamento é transição de estado com histórico, **não** exclusão física.
+- **Métodos:** `GET` leitura, `POST` criação/ação, `PATCH` atualização parcial, `DELETE` apenas quando a exclusão real for permitida pelo domínio.
+- **JSON:** campos em `snake_case` em request e response (o frontend não converte para camelCase).
+- **Identificadores:** UUID em string. Identificadores externos (`google_event_id`, `provider_message_id`) nunca substituem o `id` interno.
+- **Instantes:** ISO 8601 **com offset** na entrada (ex.: `2026-11-03T14:00:00-03:00`); horários sem offset são rejeitados com `422`. Persistência em UTC; respostas em UTC (`Z`). O cliente exibe no fuso IANA do perfil (ex.: `America/Sao_Paulo`).
+- **Datas sem hora:** `YYYY-MM-DD`, interpretadas no fuso do usuário.
+- **Duração:** `ends_at` é opcional e `null` quando não informado. **Nenhuma camada preenche fim ou duração por padrão**; restrições do Google são tratadas apenas no adaptador da integração (GP-06), sem alterar o registro de domínio.
+- **Nulos em `PATCH`:** campo ausente = não alterar; `null` explícito = limpar (quando o campo for anulável).
+- **Valores monetários (GP-10):** decimal serializado como string (ex.: `"123.45"`), nunca float.
+- **Idempotência:** `POST` de criação/ação aceita o header `Idempotency-Key` (string de até 128 caracteres). Mesma chave + mesmo payload ⇒ mesma resposta, sem nova mutação; mesma chave + payload diferente ⇒ `409 idempotency_conflict`. Obrigatório para operações originadas no WhatsApp (chave derivada do `provider_message_id`). Armazenamento: GP-03; aplicação: GP-04.
+- **Correlação:** todo request aceita `X-Request-ID` (`[A-Za-z0-9._-]{1,128}`); o backend gera UUID4 quando ausente/inválido e devolve o header em toda resposta. *(implementado)*
 
-## 5. Política de alteração
+## 5. Autenticação e identidade
+
+**Web (Supabase Auth → FastAPI)**
+
+1. O frontend autentica com Supabase Auth (cliente oficial, GP-05) e mantém a sessão/refresh no navegador.
+2. Toda chamada à API envia `Authorization: Bearer <access_token do Supabase>`.
+3. O backend valida o JWT localmente: assinatura (chaves de assinatura/JWKS do projeto Supabase — mecanismo exato confirmado em GP-03), `exp`, `aud = "authenticated"` e `iss = <SUPABASE_URL>/auth/v1`.
+4. `sub` vira `CurrentUser.id` (`backend/app/auth/models.py`). **`user_id` nunca é aceito do corpo, query ou path** para fins de autorização.
+5. O backend não emite tokens próprios nem guarda refresh tokens do usuário.
+
+**WhatsApp (GP-07)**
+
+- O webhook da Evolution API não usa JWT de usuário. A origem é validada por segredo/mecanismo do provedor; o remetente (E.164 normalizado) é mapeado para o perfil autorizado e convertido em `CurrentUser(channel="whatsapp")`. Remetente desconhecido não gera operação de domínio.
+
+**Regras comuns**
+
+- Serviços de domínio recebem `CurrentUser` explicitamente; não leem headers nem conhecem detalhes do canal.
+- Repositórios filtram por `user_id` **mesmo com RLS ativo** (defesa em profundidade). Chave `service_role` só no backend, nunca no frontend nem em logs.
+- Semântica de erro: sem credencial/credencial inválida ⇒ `401 unauthenticated`; autenticado sem permissão para a ação ⇒ `403 forbidden`; recurso de outro usuário ⇒ `404 not_found` (não revela existência).
+- **Estado atual:** `get_current_user` (`backend/app/auth/dependencies.py`) **falha fechada com 401** até GP-03 implementar a validação. Testes de GP-04 usam `app.dependency_overrides[get_current_user]`.
+
+## 6. Respostas, paginação e erros
+
+**Sucesso**
+
+| Situação | Status | Corpo |
+|---|---|---|
+| Leitura de recurso / atualização | `200` | recurso (`<Recurso>Read`), sem envelope |
+| Criação | `201` | recurso criado |
+| Ação sem conteúdo | `204` | vazio |
+| Listagem | `200` | `Page<T>` |
+
+**Paginação** (`backend/app/core/schemas.py`): query `limit` (1–200, padrão 50) e `offset` (≥ 0); resposta `{"items": [...], "limit": 50, "offset": 0, "total": 123}`. Filtros em query `snake_case`; intervalos usam `<campo>_from` / `<campo>_to`, semiaberto `[from, to)`. Ordenação padrão definida por recurso e documentada no OpenAPI.
+
+**Erros** (`backend/app/core/errors.py`) — toda resposta não-2xx da API usa:
+
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "Os dados enviados são inválidos.",
+    "details": [{ "field": "body.starts_at", "message": "Field required", "type": "missing" }],
+    "request_id": "9cda3bc1-40f8-42e0-8920-78f67d7bbcdb"
+  }
+}
+```
+
+| `code` | HTTP | Uso |
+|---|---|---|
+| `validation_error` | 422 | Schema/valor inválido; `details[]` por campo (`field` = caminho pontuado `body.x`, `query.y`) |
+| `bad_request` | 400 | Requisição malformada fora da validação de schema |
+| `unauthenticated` | 401 | Token ausente, inválido ou expirado |
+| `forbidden` | 403 | Autenticado sem permissão |
+| `not_found` | 404 | Rota ou recurso inexistente/inacessível |
+| `method_not_allowed` | 405 | Método não suportado |
+| `conflict` | 409 | Conflito de estado (ex.: concluir tarefa cancelada) |
+| `idempotency_conflict` | 409 | `Idempotency-Key` reutilizada com payload diferente |
+| `rate_limited` | 429 | Limite de taxa |
+| `external_service_error` | 502 | Falha de integração que impede a operação solicitada |
+| `service_unavailable` | 503 | Dependência obrigatória indisponível |
+| `internal_error` | 500 | Erro inesperado; mensagem genérica, detalhes só no log |
+
+- Clientes decidem pelo `code`, **nunca** pelo texto de `message` (texto em pt-BR, voltado a humanos).
+- Novos códigos exigem atualização desta tabela, de `ErrorCode` no backend e de `frontend/src/lib/api/types.ts`.
+- Falha de sincronização externa **não** é erro da operação local: o recurso é salvo e retornado com `sync_status` indicando pendência/falha (CONTEXTO §7.2).
+- **Validação:** Pydantic no backend é a autoridade. O frontend pode validar para UX, mas não substitui nem diverge da validação do servidor.
+
+## 7. Schemas compartilháveis
+
+- **Fonte de verdade:** modelos Pydantic no backend.
+- **Artefato publicado:** `docs/openapi.json`, gerado por `python backend/scripts/export_openapi.py`. O CI falha se o arquivo estiver desatualizado (`--check`). Contém hoje `HealthResponse`, `ErrorResponse`, `ErrorBody`, `ErrorDetail` e `ErrorCode`.
+- **Frontend:** `frontend/src/lib/api/types.ts` espelha manualmente os schemas comuns (`ErrorResponse`, `ErrorCode`, `Page<T>`, `HealthResponse`). GP-05 pode adotar geração automática a partir de `docs/openapi.json` (ex.: `openapi-typescript`) registrando a dependência em `docs/DECISOES.md`.
+- **Enum de sincronização (proposta, GP-03 confirma no schema):** `sync_status ∈ {not_applicable, pending, synced, failed}`.
+- Nomes de schema: `<Recurso>Create`, `<Recurso>Update`, `<Recurso>Read`; listas como `Page[<Recurso>Read]`.
+
+## 8. Fronteiras e ownership de arquivos (F1)
+
+Escrita exclusiva por tarefa; arquivos de outro dono só mudam por pedido ao integrador.
+
+| Área | Dono | Caminhos |
+|---|---|---|
+| Integrador (raiz e contratos) | integrador | `CONTEXTO.md`, `docs/CONTRATOS.md`, `docs/DECISOES.md`, `docs/openapi.json`, `.github/**`, `README.md`, `backend/pyproject.toml`, `backend/README.md`, `backend/app/main.py`, `backend/app/core/**`, `backend/app/api/health.py`, `backend/scripts/**`, `backend/.env.example` |
+| GP-03 — dados/auth | GP-03 | `supabase/**` (migrations, RLS, seeds), `backend/app/db/**`, `backend/app/auth/**`, `backend/tests/db/**`, `backend/tests/auth/**` |
+| GP-04 — domínio/API | GP-04 | `backend/app/modules/**`, `backend/app/api/router.py` (registro de routers), `backend/tests/modules/**` |
+| GP-05 — frontend | GP-05 | `frontend/**` (inclui `package.json`, lockfile e `frontend/.env.example`) |
+
+Regras de coordenação:
+
+- GP-04 começa com repositórios atrás de interfaces e fakes em memória, e `get_current_user` sobrescrito em testes; conecta ao schema real quando GP-03 publicar as migrations.
+- GP-05 começa com mocks tipados a partir desta seção e do OpenAPI; não inventa campos ausentes do contrato.
+- Novas dependências Python, variáveis de ambiente ou códigos de erro: a tarefa propõe, o integrador aplica em `pyproject.toml`/`.env.example`/`core`.
+- Schema de banco: somente GP-03 cria migrations em F1. Necessidade de campo por GP-04 é pedida a GP-03 via integrador.
+- Toda mudança de rota/schema exposto regenera `docs/openapi.json` no mesmo PR.
+
+## 9. Endpoints implementados
+
+| Serviço | Rota | Resposta | Observação |
+|---|---|---|---|
+| API | `GET /health` | `{"status":"ok","service":"gestao-pessoal-api","version":"0.1.0","environment":"local"}` | Liveness; não consulta banco nem integrações |
+| Web | `GET /healthz` | `{"status":"ok","service":"gestao-pessoal-web"}` | Liveness do servidor Next.js |
+
+Readiness com dependências reais (banco, Redis, Evolution) será adicionada pela tarefa que introduzir cada dependência e consolidada em GP-12.
+
+## 10. Contratos ainda abertos
+
+- [ ] Mecanismo exato de verificação do JWT Supabase (JWKS assimétrico vs. segredo legado) e papel de conexão ao banco — **GP-03**.
+- [ ] Estratégia de migrations, RLS e armazenamento de chaves de idempotência — **GP-03**.
+- [ ] Rotas, schemas e filtros concretos de compromissos, tarefas e rotinas — **GP-04**.
+- [ ] Representação de recorrência e semântica de fuso/DST — **GP-04/GP-09** (ADR-003).
+- [ ] Comandos/eventos de integração, outbox ou equivalente e `sync_status` final — **GP-03/GP-06**.
+- [ ] Schemas de interpretação de IA, estados de conversação e desambiguação — **GP-08**.
+- [ ] Payloads internos dos workers e política de retries — **GP-09** (ADR-004).
+- [x] Convenções de rota/versão, respostas, paginação, erros, identidade e ownership — **GP-02**.
+
+## 11. Política de alteração
 
 O agente que necessitar alterar um contrato registra **proposta, impacto, testes e consumidores afetados**, solicita coordenação ao integrador e só depois edita a implementação. Não permitir alterações independentes de schema por múltiplos agentes no mesmo intervalo.
+
+Versionamento: mudanças aditivas (novo campo opcional, novo endpoint) entram em `/api/v1` com atualização deste arquivo e do OpenAPI; mudanças incompatíveis exigem ADR e plano de transição.
