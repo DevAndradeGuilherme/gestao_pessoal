@@ -45,9 +45,28 @@ Para nova decisão, usar:
 - Evidência / testes: avaliar retrabalho e tempo após a Fase 1.
 - Documentos e módulos afetados: `docs/PLANO_DESENVOLVIMENTO.md`, `docs/TAREFAS.md`, `AGENTS.md`.
 
+## ADR-002 — Convenções de monorepo, dependências e CI
+
+- Data: 2026-11-03
+- Estado: proposta (GP-01/GP-02), aguardando aprovação do integrador
+- Contexto: GP-03, GP-04 e GP-05 precisam iniciar em paralelo sobre uma base executável, com contratos e fronteiras claros e sem dependências excessivas.
+- Decisão:
+  - Monorepo com projetos independentes em `frontend/` e `backend/`; sem gerenciador de workspace na raiz.
+  - Frontend: Next.js 16.4.5 (gerado por `create-next-app`, App Router, `src/`), TypeScript estrito, Tailwind CSS 4, ESLint (`eslint-config-next`), Prettier e Vitest. npm com `package-lock.json` versionado; Node >= 22.
+  - Backend: FastAPI + Pydantic 2 + pydantic-settings + Uvicorn; dev com pytest, httpx (TestClient) e Ruff (lint + formatação). Python >= 3.12 (CI em 3.12; validado localmente em 3.13). Dependências declaradas com faixas em `pyproject.toml`, instalação por `pip`.
+  - Estrutura modular do backend: `core` (transversal), `api` (health + agregador `/api/v1`), `auth`, `db`, `modules/<capacidade>` (`router`/`schemas`/`service`/`repository`) e `integrations/<provedor>` atrás de `Protocol`.
+  - Envelope de erro único `{"error": {code, message, details, request_id}}` com códigos estáveis; `X-Request-ID` em toda resposta; recurso de outro usuário responde `404`.
+  - Schemas compartilháveis: Pydantic como fonte, `docs/openapi.json` exportado e verificado no CI; tipos comuns espelhados no frontend.
+  - CI GitHub Actions (`.github/workflows/ci.yml`) em PRs e push na `main`: lint, formatação, testes, typecheck/build e checagem do OpenAPI.
+  - `get_current_user` falha fechada (401) até GP-03.
+- Alternativas consideradas: `uv`/Poetry com lockfile Python (adiado: ferramenta ausente no ambiente atual; reavaliar em GP-12 para builds reproduzíveis); pnpm/turborepo (desnecessário para dois projetos); Jest (Vitest é mais leve para TS/ESM); envelope também em respostas de sucesso (rejeitado por verbosidade sem ganho).
+- Consequências / riscos: backend sem lockfile pode variar versões transitivas entre ambientes; `npm audit` aponta 16 vulnerabilidades moderadas em dependências transitivas de desenvolvimento (cadeia do ESLint/`minimatch`), sem correção não-quebrável disponível em 03/11/2026; Starlette 1.x emite aviso recomendando `httpx2` no TestClient (aviso filtrado no pytest até avaliação).
+- Evidência / testes: `pytest` (15 testes), `ruff check`, `ruff format --check`, `export_openapi.py --check`, `npm run lint`, `format:check`, `typecheck`, `npm test` (4 testes), `npm run build`; smoke de `uvicorn` (`/health`) e `next start`/`next dev` (`/healthz`).
+- Documentos e módulos afetados: `docs/CONTRATOS.md` §4–10, `README.md`, `backend/**`, `frontend/**`, `.github/workflows/ci.yml`, `docs/openapi.json`.
+
 ## Decisões técnicas ainda a registrar
 
-- [ ] ADR-002 — Convenções de monorepo, dependências e CI.
+- [x] ADR-002 — Convenções de monorepo, dependências e CI (proposta acima).
 - [ ] ADR-003 — Formato de recorrência e tratamento de timezone.
 - [ ] ADR-004 — Persistência/claim de jobs, retry/backoff e idempotência.
 - [ ] ADR-005 — Proteção e rotação de tokens OAuth Google.

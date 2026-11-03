@@ -1,13 +1,13 @@
 # Tarefas de desenvolvimento — quadro mestre
 
 **Status possíveis:** `não iniciada`, `em execução`, `bloqueada`, `em revisão`, `concluída`.  
-**Situação inicial:** todas `não iniciada`.  
+**Situação:** GP-01 e GP-02 `em revisão`; demais `não iniciada`.  
 **Regra:** os itens abaixo são escopos para futuros prompts, **não prompts de implementação**.
 
 | ID | Fase | Entrega agrupada | Agente / modelo recomendado | Dependências | Ação manual antes | Status |
 |---|---|---|---|---|---|---|
-| GP-01 | F0 | Bootstrap Git, estrutura e regras dos agentes | Claude Code / Sonnet | — | Confirmar clone e acesso de escrita | não iniciada |
-| GP-02 | F0 | Contratos, skeletons, ferramentas de teste e CI mínimo | Claude Code / Sonnet | GP-01 | Nenhuma, salvo escolha de runner CI | não iniciada |
+| GP-01 | F0 | Bootstrap Git, estrutura e regras dos agentes | Claude Code / Sonnet | — | Confirmar clone e acesso de escrita | em revisão |
+| GP-02 | F0 | Contratos, skeletons, ferramentas de teste e CI mínimo | Claude Code / Sonnet | GP-01 | Nenhuma, salvo escolha de runner CI | em revisão |
 | GP-03 | F1 | Schema, migrations, RLS e autenticação | Codex / medium | GP-02 | Provisionar Supabase e configurar segredos localmente | não iniciada |
 | GP-04 | F1 | Backend de domínio + CRUD de compromissos, tarefas e rotinas | Claude Code / Sonnet | GP-02 e contratos GP-03 | Nenhuma para mocks; acesso DB para integração real | não iniciada |
 | GP-05 | F1 | Frontend de agenda, tarefas, rotinas e perfil | Codex / medium | GP-02; contratos GP-03/04 | Nenhuma para implementação local | não iniciada |
@@ -28,6 +28,7 @@
 ### GP-02 — Contratos, skeletons e CI
 - Estabelecer contrato inicial entre web/API, organização dos módulos, contratos de autenticação/erros e estrutura mínima de testes e CI.
 - Aceite: contratos registrados em `docs/CONTRATOS.md`, checks básicos executáveis; nenhum endpoint fictício apresentado como implementado.
+- Registro (GP-01 + GP-02 consolidadas): Claude Code, branch `lobster`, 03/11/2026. Entregues skeletons `frontend/` e `backend/`, contratos `docs/CONTRATOS.md` §4–10, `docs/openapi.json`, CI `.github/workflows/ci.yml` e ADR-002. Evidência: pytest 15/15, Ruff ok, OpenAPI `--check` ok, ESLint/Prettier/tsc ok, Vitest 4/4, `next build` ok, smoke local de `/health` e `/healthz`. Pendente: primeira execução do CI no GitHub e aprovação do integrador.
 
 ### GP-03 — Banco e autenticação
 - Modelar usuários, compromissos, tarefas, rotinas, ocorrências, lembretes, eventos recebidos e auditoria conforme contexto; Supabase Auth e isolamento.
