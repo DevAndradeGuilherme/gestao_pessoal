@@ -20,19 +20,19 @@ Para nova decisão, usar:
 
 ## Decisões de produto incorporadas por referência
 
-| Referência | Tema | Definição aprovada (não rediscutir sem mudança explícita de escopo) |
-|---|---|---|
-| CONTEXTO §10 | Stack | Next.js + TypeScript + Tailwind; FastAPI + Python |
-| CONTEXTO §10 | Banco/Auth | Supabase gerenciado, vínculo por usuário e isolamento |
-| CONTEXTO §10 | WhatsApp | Uma instância pessoal Evolution API/Baileys |
-| CONTEXTO §10 | IA | OpenAI híbrida, backend valida/autoriza/executa |
-| CONTEXTO §10 | Agenda | Sincronização sistema → Google no MVP |
-| CONTEXTO §10 | Tarefas | Sync Google somente por escolha explícita |
-| CONTEXTO §10 | Duração | Sem duração presumida pelo produto |
-| CONTEXTO §10 | Recorrência | Flexível, incluindo último dia do mês |
-| CONTEXTO §10 | Notificações | 07h, 23h, silêncio 00h–07h; configuráveis |
-| CONTEXTO §10 | Jobs | Celery/Redis; persistência durável no PostgreSQL |
-| CONTEXTO §10 | Finanças | Migração progressiva do Django para backend principal |
+| Referência   | Tema         | Definição aprovada (não rediscutir sem mudança explícita de escopo) |
+| ------------ | ------------ | ------------------------------------------------------------------- |
+| CONTEXTO §10 | Stack        | Next.js + TypeScript + Tailwind; FastAPI + Python                   |
+| CONTEXTO §10 | Banco/Auth   | Supabase gerenciado, vínculo por usuário e isolamento               |
+| CONTEXTO §10 | WhatsApp     | Uma instância pessoal Evolution API/Baileys                         |
+| CONTEXTO §10 | IA           | OpenAI híbrida, backend valida/autoriza/executa                     |
+| CONTEXTO §10 | Agenda       | Sincronização sistema → Google no MVP                               |
+| CONTEXTO §10 | Tarefas      | Sync Google somente por escolha explícita                           |
+| CONTEXTO §10 | Duração      | Sem duração presumida pelo produto                                  |
+| CONTEXTO §10 | Recorrência  | Flexível, incluindo último dia do mês                               |
+| CONTEXTO §10 | Notificações | 07h, 23h, silêncio 00h–07h; configuráveis                           |
+| CONTEXTO §10 | Jobs         | Celery/Redis; persistência durável no PostgreSQL                    |
+| CONTEXTO §10 | Finanças     | Migração progressiva do Django para backend principal               |
 
 ## ADR-001 — Estratégia de execução com agentes
 
@@ -64,11 +64,35 @@ Para nova decisão, usar:
 - Evidência / testes: `pytest` (15 testes), `ruff check`, `ruff format --check`, `export_openapi.py --check`, `npm run lint`, `format:check`, `typecheck`, `npm test` (4 testes), `npm run build`; smoke de `uvicorn` (`/health`) e `next start`/`next dev` (`/healthz`).
 - Documentos e módulos afetados: `docs/CONTRATOS.md` §4–10, `README.md`, `backend/**`, `frontend/**`, `.github/workflows/ci.yml`, `docs/openapi.json`.
 
+## ADR-003 — Representação da recorrência e ocorrências
+
+- Data: 2026-11-03
+- Estado: aprovada na integração F1 (revisar em GP-09)
+- Contexto: CONTEXTO §2.4/§10 exige recorrência flexível e validável (diária, semanal, mensal, intervalos, último dia do mês), sem enumeração rígida.
+- Decisão:
+  - `routines.recurrence_rule` (JSONB) guarda o objeto `RecurrenceRule` (`backend/app/modules/routines/recurrence.py`): `frequency` (`daily|weekly|monthly`), `interval` (a cada N), `by_weekday` (semanal), `by_month_day` (mensal; `-1` = último dia; dia inexistente no mês é pulado), `time` (HH:MM local), `timezone` (IANA), `start_date`, `end_date?`, `count?`. Validação por Pydantic; novos campos são aditivos.
+  - Geração de ocorrências é função pura e determinística; a API as materializa sob demanda (`occurrences/generate`) e GP-09 passará a gerá-las periodicamente.
+  - DST: horário em lacuna usa o offset anterior; horário repetido usa a primeira ocorrência (`fold=0`).
+  - Persistência: `routine_occurrences.scheduled_for` é **data local** no fuso da regra; a API expõe o instante UTC reconstruído (data local + `time` + `timezone`). Uma regra tem um horário por dia, logo `(routine_id, scheduled_for)` é único.
+  - O formulário web mapeia diário/semanal/intervalo/último dia do mês para essa regra; regras não representáveis no formulário (ex.: vários dias do mês) podem ser criadas via API e só têm o nome editável na web.
+- Alternativas consideradas: RRULE (RFC 5545) como texto (expressivo, mas validação e “último dia” menos legíveis, dependência extra); coluna `timestamptz` em `routine_occurrences` (exigiria nova migration sobre schema aplicado sem histórico reconciliado).
+- Consequências / riscos: alterar `time`/`timezone` de uma regra reposiciona o horário exibido de ocorrências já materializadas (a data não muda); regras com mais de uma ocorrência por dia não são suportadas.
+- Evidência / testes: `backend/tests/modules/test_recurrence.py`, `backend/tests/integration/test_postgres_api.py::test_routine_occurrences_roundtrip`, `frontend/src/lib/recurrence.test.ts`.
+- Documentos e módulos afetados: `docs/CONTRATOS.md` §9, `backend/app/db/repos/routines.py`.
+
+## ADR-004 (parcial) — Transação por requisição e idempotência HTTP (integração F1)
+
+- Data: 2026-11-03
+- Estado: aprovada para F1; a parte de jobs/retry/backoff do ADR-004 segue pendente (GP-09)
+- Decisão: uma conexão/transação PostgreSQL por requisição (`SET LOCAL ROLE app_backend` + claim `sub`), com commit antes do envio da resposta; mutação, auditoria e chave de idempotência atômicas; advisory lock por `(user, key)`. Conexões vêm de um `psycopg_pool.ConnectionPool` por DSN (`app/db/session.py`, `DATABASE_POOL_MAX`, padrão 5, `check_connection` antes de cada uso). O isolamento não depende do pool: papel e claim são `SET LOCAL` por transação.
+- Latência (medida em 03/11/2026, dev em sa-east-1, RTT ≈ 265 ms): abrir conexão ≈ 0,8 s (TCP + TLS + autenticação ≈ 3 RTT) e cada consulta ≈ 1 RTT; requisição sem pool ≈ 1,5 s, com pool ≈ 0,8 s. A latência de ~8 s relatada **não foi reproduzida** (host do pooler Supabase resolve IPv4 em 10 ms); hipóteses: host direto `db.<ref>.supabase.co` (IPv6) com fallback lento no Windows, ou busca fria do JWKS na primeira requisição. Reduzir mais exige aproximar a API do banco (deploy na mesma região, GP-12) ou menos round-trips por requisição.
+- Riscos: chaves de idempotência não expiram (política de retenção pendente).
+
 ## Decisões técnicas ainda a registrar
 
 - [x] ADR-002 — Convenções de monorepo, dependências e CI (proposta acima).
-- [ ] ADR-003 — Formato de recorrência e tratamento de timezone.
-- [ ] ADR-004 — Persistência/claim de jobs, retry/backoff e idempotência.
+- [x] ADR-003 — Formato de recorrência e tratamento de timezone.
+- [ ] ADR-004 — Persistência/claim de jobs e retry/backoff (idempotência HTTP: ADR-004 parcial acima).
 - [ ] ADR-005 — Proteção e rotação de tokens OAuth Google.
 - [ ] ADR-006 — Sequência de migração financeira e desligamento do legado.
 - [ ] ADR-007 — Topologia real de deploy, backup e monitoramento.

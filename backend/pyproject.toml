@@ -7,6 +7,9 @@ dependencies = [
     "fastapi>=0.162,<1",
     "pydantic>=2.14,<3",
     "pydantic-settings>=2.16,<3",
+    "PyJWT[crypto]>=2.10,<3",
+    "psycopg[binary]>=3.2,<4",
+    "psycopg-pool>=3.2,<4",
     "uvicorn[standard]>=0.54,<1",
 ]
 
@@ -26,6 +29,7 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-ra"
 filterwarnings = [
     "error",
@@ -42,3 +46,5 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+# SQL montado só com constantes do módulo e cláusulas fixas; valores sempre parametrizados (%s).
+"app/db/repos/**" = ["S608"]
