@@ -48,3 +48,17 @@ src/
 - Tipos em `src/lib/api/types.ts` espelham `docs/openapi.json`; não duplicar regras de domínio.
 - Next.js 16 tem APIs diferentes das versões anteriores: consultar `node_modules/next/dist/docs/`
   (ver `AGENTS.md` desta pasta).
+
+## Roteiro de validação manual (E2E com conta real)
+
+Pré-requisitos: `backend/.env` preenchido; `uvicorn app.main:app --env-file .env` em `backend/` (porta 8000); `npm run dev` em `frontend/` com `.env.local`.
+
+1. Acessar `/agenda` sem sessão: deve mostrar o acesso negado/link para `/login` (sem dados).
+2. Entrar em `/login` com a conta A: redireciona para `/` e mostra "Carregando…" e depois o painel.
+3. Agenda → "+ Novo compromisso" (título, data, horário; **sem** fim): aparece na lista. Recarregar (F5): continua lá.
+4. Editar o horário (reagendar) e depois "Cancelar compromisso": some da agenda.
+5. Tarefas → criar com prazo (data **e** horário), editar prioridade, concluir e reabrir; recarregar e conferir.
+6. Rotinas → criar (ex.: seg/qua 19:00), marcar "realizada" no dia de hoje; recarregar e conferir o histórico.
+7. Parar o backend e recarregar `/tarefas`: deve aparecer a mensagem de erro com "Tentar novamente"; religar e tentar de novo.
+8. "Sair": volta a `/login`; voltar ao navegador/abrir `/tarefas` não mostra dados.
+9. Entrar com a conta B: nenhum dado da conta A aparece.

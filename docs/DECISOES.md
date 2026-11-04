@@ -20,19 +20,19 @@ Para nova decisão, usar:
 
 ## Decisões de produto incorporadas por referência
 
-| Referência | Tema | Definição aprovada (não rediscutir sem mudança explícita de escopo) |
-|---|---|---|
-| CONTEXTO §10 | Stack | Next.js + TypeScript + Tailwind; FastAPI + Python |
-| CONTEXTO §10 | Banco/Auth | Supabase gerenciado, vínculo por usuário e isolamento |
-| CONTEXTO §10 | WhatsApp | Uma instância pessoal Evolution API/Baileys |
-| CONTEXTO §10 | IA | OpenAI híbrida, backend valida/autoriza/executa |
-| CONTEXTO §10 | Agenda | Sincronização sistema → Google no MVP |
-| CONTEXTO §10 | Tarefas | Sync Google somente por escolha explícita |
-| CONTEXTO §10 | Duração | Sem duração presumida pelo produto |
-| CONTEXTO §10 | Recorrência | Flexível, incluindo último dia do mês |
-| CONTEXTO §10 | Notificações | 07h, 23h, silêncio 00h–07h; configuráveis |
-| CONTEXTO §10 | Jobs | Celery/Redis; persistência durável no PostgreSQL |
-| CONTEXTO §10 | Finanças | Migração progressiva do Django para backend principal |
+| Referência   | Tema         | Definição aprovada (não rediscutir sem mudança explícita de escopo) |
+| ------------ | ------------ | ------------------------------------------------------------------- |
+| CONTEXTO §10 | Stack        | Next.js + TypeScript + Tailwind; FastAPI + Python                   |
+| CONTEXTO §10 | Banco/Auth   | Supabase gerenciado, vínculo por usuário e isolamento               |
+| CONTEXTO §10 | WhatsApp     | Uma instância pessoal Evolution API/Baileys                         |
+| CONTEXTO §10 | IA           | OpenAI híbrida, backend valida/autoriza/executa                     |
+| CONTEXTO §10 | Agenda       | Sincronização sistema → Google no MVP                               |
+| CONTEXTO §10 | Tarefas      | Sync Google somente por escolha explícita                           |
+| CONTEXTO §10 | Duração      | Sem duração presumida pelo produto                                  |
+| CONTEXTO §10 | Recorrência  | Flexível, incluindo último dia do mês                               |
+| CONTEXTO §10 | Notificações | 07h, 23h, silêncio 00h–07h; configuráveis                           |
+| CONTEXTO §10 | Jobs         | Celery/Redis; persistência durável no PostgreSQL                    |
+| CONTEXTO §10 | Finanças     | Migração progressiva do Django para backend principal               |
 
 ## ADR-001 — Estratégia de execução com agentes
 
@@ -84,8 +84,9 @@ Para nova decisão, usar:
 
 - Data: 2026-11-03
 - Estado: aprovada para F1; a parte de jobs/retry/backoff do ADR-004 segue pendente (GP-09)
-- Decisão: uma conexão/transação PostgreSQL por requisição (`SET LOCAL ROLE app_backend` + claim `sub`), com commit antes do envio da resposta; mutação, auditoria e chave de idempotência atômicas; advisory lock por `(user, key)`. Sem pool de conexões nesta etapa (cada requisição abre uma conexão; ~0,8 s contra o projeto de dev remoto).
-- Riscos: latência por conexão (avaliar `psycopg_pool`/pooler em GP-12); chaves de idempotência não expiram (política de retenção pendente).
+- Decisão: uma conexão/transação PostgreSQL por requisição (`SET LOCAL ROLE app_backend` + claim `sub`), com commit antes do envio da resposta; mutação, auditoria e chave de idempotência atômicas; advisory lock por `(user, key)`. Conexões vêm de um `psycopg_pool.ConnectionPool` por DSN (`app/db/session.py`, `DATABASE_POOL_MAX`, padrão 5, `check_connection` antes de cada uso). O isolamento não depende do pool: papel e claim são `SET LOCAL` por transação.
+- Latência (medida em 03/11/2026, dev em sa-east-1, RTT ≈ 265 ms): abrir conexão ≈ 0,8 s (TCP + TLS + autenticação ≈ 3 RTT) e cada consulta ≈ 1 RTT; requisição sem pool ≈ 1,5 s, com pool ≈ 0,8 s. A latência de ~8 s relatada **não foi reproduzida** (host do pooler Supabase resolve IPv4 em 10 ms); hipóteses: host direto `db.<ref>.supabase.co` (IPv6) com fallback lento no Windows, ou busca fria do JWKS na primeira requisição. Reduzir mais exige aproximar a API do banco (deploy na mesma região, GP-12) ou menos round-trips por requisição.
+- Riscos: chaves de idempotência não expiram (política de retenção pendente).
 
 ## Decisões técnicas ainda a registrar
 

@@ -129,3 +129,10 @@ def test_hs256_token_signed_with_unknown_secret_is_rejected(client):
         algorithm="HS256",
     )
     assert client.get("/api/v1/tasks", headers=_auth(forged)).status_code == 401
+
+
+def test_alg_none_token_is_rejected(client, tokens):
+    a, _ = tokens
+    claims = jwt.decode(a, options={"verify_signature": False})
+    unsigned = jwt.encode(claims, key=None, algorithm="none")
+    assert client.get("/api/v1/tasks", headers=_auth(unsigned)).status_code == 401
