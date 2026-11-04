@@ -9,11 +9,18 @@ export function localDate(date: Date, timezone: string): string {
   }).format(date);
 }
 
-export function dateLabel(date: string, _timezone: string, options: Intl.DateTimeFormatOptions = {}) {
+export function dateLabel(
+  date: string,
+  _timezone: string,
+  options: Intl.DateTimeFormatOptions = {},
+) {
   // Datas civis não são instantes: formatar em UTC evita mudar o dia em fusos extremos.
-  return new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC", day: "2-digit", month: "short", ...options }).format(
-    new Date(`${date}T12:00:00Z`),
-  );
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "short",
+    ...options,
+  }).format(new Date(`${date}T12:00:00Z`));
 }
 
 export function shiftDate(date: string, days: number): string {
@@ -28,6 +35,8 @@ export function occursOn(rule: Recurrence, startDate: string, date: string): boo
   if (rule.kind === "daily") return true;
   if (rule.kind === "weekly") return rule.weekdays.includes(day);
   if (rule.kind === "monthly_last") return shiftDate(date, 1).slice(5, 7) !== date.slice(5, 7);
-  const diff = Math.round((Date.parse(`${date}T12:00:00Z`) - Date.parse(`${startDate}T12:00:00Z`)) / 86400000);
+  const diff = Math.round(
+    (Date.parse(`${date}T12:00:00Z`) - Date.parse(`${startDate}T12:00:00Z`)) / 86400000,
+  );
   return diff % (rule.every * (rule.unit === "weeks" ? 7 : 1)) === 0;
 }

@@ -24,7 +24,10 @@ export function getSupabase(): SupabaseClient | null {
 }
 
 /** Ponto único para chamadas autenticadas quando os recursos GP-04 forem publicados. */
-export async function authenticatedApiFetch<T>(path: string, init: ApiRequestInit = {}): Promise<T> {
+export async function authenticatedApiFetch<T>(
+  path: string,
+  init: ApiRequestInit = {},
+): Promise<T> {
   const supabase = getSupabase();
   const { data, error } = supabase
     ? await supabase.auth.getSession()

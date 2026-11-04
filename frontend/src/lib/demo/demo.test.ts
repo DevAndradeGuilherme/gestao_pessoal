@@ -12,8 +12,12 @@ describe("validação dos formulários de demonstração", () => {
     expect(validateTask("Comprar pão", "", "09:00")).toContain("data");
   });
   it("exige dias semanais e intervalo positivo", () => {
-    expect(validateRoutine("Estudar", "2026-11-03", { kind: "weekly", weekdays: [] })).toContain("dia");
-    expect(validateRoutine("Estudar", "2026-11-03", { kind: "interval", every: 0, unit: "days" })).toContain("intervalo");
+    expect(validateRoutine("Estudar", "2026-11-03", { kind: "weekly", weekdays: [] })).toContain(
+      "dia",
+    );
+    expect(
+      validateRoutine("Estudar", "2026-11-03", { kind: "interval", every: 0, unit: "days" }),
+    ).toContain("intervalo");
   });
 });
 

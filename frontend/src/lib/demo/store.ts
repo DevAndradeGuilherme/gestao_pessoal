@@ -23,7 +23,11 @@ export function readDemoState(): DemoState {
     const parsed: unknown = JSON.parse(stored);
     if (!parsed || typeof parsed !== "object") return newDemoState();
     const value = parsed as Partial<DemoState>;
-    if (!Array.isArray(value.appointments) || !Array.isArray(value.tasks) || !Array.isArray(value.routines)) {
+    if (
+      !Array.isArray(value.appointments) ||
+      !Array.isArray(value.tasks) ||
+      !Array.isArray(value.routines)
+    ) {
       return newDemoState();
     }
     return { ...newDemoState(), ...value };
