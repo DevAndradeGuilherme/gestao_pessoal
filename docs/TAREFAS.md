@@ -1,7 +1,7 @@
 # Tarefas de desenvolvimento — quadro mestre
 
 **Status possíveis:** `não iniciada`, `em execução`, `bloqueada`, `em revisão`, `concluída`.  
-**Situação:** GP-01 e GP-02 `em revisão`; GP-03, GP-04 e GP-05 `em revisão` (integradas em `integrate/f1-core`, validação com JWT/login reais pendente); demais `não iniciada`.  
+**Situação:** GP-01 e GP-02 `em revisão`; GP-03, GP-04 e GP-05 `em revisão` (integradas em `integrate/f1-core`; JWT real e E2E manual aprovados; aguardam CI e revisão do PR); demais `não iniciada`.  
 **Regra:** os itens abaixo são escopos para futuros prompts, **não prompts de implementação**.
 
 | ID    | Fase | Entrega agrupada                                              | Agente / modelo recomendado               | Dependências              | Ação manual antes                                                     | Status       |
@@ -40,8 +40,11 @@
 ### GP-F1-INT — Integração da Fase 1 (branch `integrate/f1-core`, 03/11/2026, Claude Code)
 
 - Entregue: merge sem conflitos de GP-03, GP-04 e GP-05; adaptadores PostgreSQL (`backend/app/db/repos/`) ligados por `get_stores` (transação por requisição, RLS, auditoria e idempotência atômicas, fail-closed); frontend consumindo a API (`src/lib/api/domain.ts`, `src/components/live-views.tsx`); `docs/CONTRATOS.md`, ADR-003/ADR-004 parcial, `docs/openapi.json`.
-- Evidência: ver relatório de entrega (pytest com PostgreSQL real, Vitest, build). JWT real validado (`tests/integration/test_real_jwt.py`, 4/4, 03/11/2026). **Pendente:** E2E no navegador (extensão indisponível na sessão; roteiro manual em `frontend/README.md`).
-- Pendente: reconciliação do histórico de migrations (`supabase/README.md`), endpoints de perfil/preferências, pool de conexões, primeira execução do CI.
+- Testes automatizados (04/11/2026): backend 147 passed/0 skipped, incluindo PostgreSQL real e `tests/integration/test_real_jwt.py` (4/4: token real aceito, isolamento A/B, token adulterado/expirado/corrompido, HS256 e `alg=none` rejeitados com 401); frontend: ESLint, Prettier, tsc, Vitest 33/33 e `next build`.
+- Validação manual E2E (executada pelo usuário no navegador, com contas reais; **não automatizada**): 9/9 aprovados. (1) login Supabase; (2) criar compromisso; (3) persistência após recarregar; (4) reagendar e cancelar; (5) criar e editar tarefa; (6) concluir e reabrir tarefa; (7) criar e acompanhar rotina; (8) painel Hoje com dados persistidos; (9) logout e proteção das páginas. Não há suíte E2E de navegador automatizada.
+- **Status da Fase 1:** funcionalmente completa e validada; `em revisão` até CI verde e aprovação do PR.
+- Limitações conhecidas: sem endpoints de perfil/preferências (tela de configurações informativa); listas do frontend limitadas a 200 itens; chaves de idempotência sem expiração; latência de ~0,8 s/requisição ao banco remoto (RTT ≈ 265 ms; pool aplicado; API na mesma região em GP-12); alterar horário/fuso de rotina reposiciona o horário de ocorrências já materializadas; sem E2E de navegador automatizado.
+- **Pendência obrigatória antes de novas migrations:** reconciliar o histórico `supabase_migrations` (`supabase migration repair --status applied 202611030001`, ver `supabase/README.md`). Não executar `supabase db push`. Primeira execução do CI no GitHub: ver PR.
 
 ### GP-04 — Domínio e API
 
