@@ -5,10 +5,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 import psycopg
-from psycopg import Connection
+from psycopg import Connection, sql
 from psycopg.rows import dict_row
 
 from app.auth.models import CurrentUser
+
+
+class DatabaseNotConfiguredError(RuntimeError):
+    """`DATABASE_URL` ausente: a API deve falhar fechada (503) em vez de simular persistência."""
 
 
 @contextmanager
@@ -20,9 +24,14 @@ def user_transaction(user: CurrentUser) -> Iterator[Connection]:
     """
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
-        raise RuntimeError("DATABASE_URL is not configured")
+        raise DatabaseNotConfiguredError("DATABASE_URL is not configured")
     with psycopg.connect(dsn, row_factory=dict_row) as conn:
         with conn.transaction():
-            conn.execute("set local role app_backend")
-            conn.execute("select set_config('request.jwt.claim.sub', %s, true)", (str(user.id),))
+            # Um único round-trip; o UUID validado entra como literal escapado pelo driver.
+            conn.execute(
+                sql.SQL(
+                    "set local role app_backend; "
+                    "select set_config('request.jwt.claim.sub', {}, true)"
+                ).format(sql.Literal(str(user.id)))
+            )
             yield conn

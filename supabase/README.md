@@ -34,6 +34,23 @@ O backend aceita apenas JWTs Supabase Auth assimétricos `RS256` ou `ES256`. O J
 
 Tabelas privadas não têm privilégios para `anon`/`authenticated` via Data API; o frontend usa FastAPI. Mesmo com `FORCE RLS`, `service_role` e outras conexões `BYPASSRLS` podem enxergar todos os usuários. Nunca consultar dados privados antes de `SET LOCAL ROLE app_backend`.
 
-## Solicitação ao integrador
+## Reconciliação do histórico de migrations (não executada)
+
+**Evidência (consulta somente leitura em 03/11/2026, projeto de desenvolvimento):** o schema `supabase_migrations` **não existe**; as 11 tabelas de `public`, `FORCE RLS`, as políticas `owner_only`/`*_bootstrap`, o papel `app_backend` (sem `BYPASSRLS`) e o trigger `on_auth_user_created` estão presentes, isto é, o conteúdo de `202611030001_gp03_core.sql` já está aplicado, mas **sem registro**. Um `supabase db push` tentaria reaplicar a migration e falharia (ou, pior, duplicaria objetos parcialmente).
+
+**Procedimento seguro (a executar por humano, com a Supabase CLI instalada e `supabase link` no projeto de dev):**
+
+1. Não rodar `supabase db push` nem `supabase db reset` neste projeto.
+2. Confirmar o estado: `supabase migration list` (remoto vazio, local com `202611030001`) e comparar `supabase db diff --linked` com o arquivo; o diff deve ser vazio para os objetos da migration.
+3. Se vazio, registrar sem executar SQL: `supabase migration repair --status applied 202611030001`. Isso cria `supabase_migrations.schema_migrations` e a linha da versão.
+4. Reexecutar `supabase migration list` (local e remoto iguais) e `supabase db push --dry-run` (deve informar "Remote database is up to date").
+5. Se o diff não for vazio, **parar**: gerar migration compensatória revisada pelo integrador; não editar a migration já versionada.
+6. Para qualquer novo projeto (staging/produção), aplicar normalmente com `supabase db push` desde o início.
+
+## Solicitação ao integrador (atendida na integração F1)
+
+`PyJWT[crypto]` e `psycopg[binary]` estão em `backend/pyproject.toml`; `SUPABASE_URL`/`DATABASE_URL` em `backend/.env.example`; estratégia registrada em `docs/CONTRATOS.md` §5 e `docs/DECISOES.md` (ADR-003/ADR-004 parcial). Pendente: validar o tipo de chave de assinatura no dashboard do projeto gerenciado (o JWKS de dev serve `ES256`).
+
+### Texto original da solicitação
 
 Adicionar `PyJWT[crypto]` e `psycopg[binary]` ao `backend/pyproject.toml`; adicionar nomes `SUPABASE_URL` e `DATABASE_URL` sem valores ao `backend/.env.example`. Registrar esta estratégia de JWT, migrations, RLS e idempotência em `docs/CONTRATOS.md` e `docs/DECISOES.md`. Confirmar o tipo de chave de assinatura no dashboard/JWKS do Supabase e validar o papel de conexão no projeto gerenciado. Publicar este resumo aos agentes GP-04 e GP-05.

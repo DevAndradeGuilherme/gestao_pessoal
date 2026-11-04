@@ -1,7 +1,7 @@
 # Contratos técnicos compartilhados
 
 **Estado:** contratos iniciais aprovados em GP-02 (03/11/2026). Seções 1–3 definem semântica; seções 4–10 definem formatos e fronteiras técnicas.
-**Implementado até agora:** somente os health checks, o envelope de erro e o `X-Request-ID` (seção 9). Rotas de negócio citadas como exemplo **não existem** até a tarefa responsável entregá-las.
+**Implementado (integração F1, branch `integrate/f1-core`):** health checks, envelope de erro, `X-Request-ID`, autenticação por JWT Supabase (JWKS), persistência PostgreSQL com RLS, idempotência, auditoria e as rotas de compromissos, tarefas e rotinas listadas na seção 9. Perfil, preferências e integrações **não** têm endpoints.
 
 ## 1. Responsabilidades dos canais
 
@@ -65,7 +65,9 @@
 - Serviços de domínio recebem `CurrentUser` explicitamente; não leem headers nem conhecem detalhes do canal.
 - Repositórios filtram por `user_id` **mesmo com RLS ativo** (defesa em profundidade). Chave `service_role` só no backend, nunca no frontend nem em logs.
 - Semântica de erro: sem credencial/credencial inválida ⇒ `401 unauthenticated`; autenticado sem permissão para a ação ⇒ `403 forbidden`; recurso de outro usuário ⇒ `404 not_found` (não revela existência).
-- **Estado atual:** `get_current_user` (`backend/app/auth/dependencies.py`) **falha fechada com 401** até GP-03 implementar a validação. Testes de GP-04 usam `app.dependency_overrides[get_current_user]`.
+- **Implementado:** `get_current_user` (`backend/app/auth/dependencies.py`) valida o JWT com `PyJWT[crypto]`: assinatura **RS256/ES256 via JWKS** (`<SUPABASE_URL>/auth/v1/.well-known/jwks.json`, cache 10 min), `exp`, `aud="authenticated"`, `iss=<SUPABASE_URL>/auth/v1`, `role="authenticated"`, `sub` UUID. Tokens `HS256`/assinatura inválida ⇒ 401. Sem `SUPABASE_URL` ⇒ 401 (fail-closed). Testes unitários usam `app.dependency_overrides[get_current_user]`.
+- **Persistência:** `get_stores` (`modules/common/deps.py`) abre **uma transação PostgreSQL por requisição** (`app/db/session.py`: `SET LOCAL ROLE app_backend` + `request.jwt.claim.sub`, RLS `FORCE`). Entidade, `activity_log` (auditoria) e `idempotency_keys` são confirmados **juntos** antes da resposta (`Depends(..., scope="function")`). Banco ausente/indisponível ou falha de commit ⇒ `503 service_unavailable` sem detalhes do driver; nada é gravado em memória (os fakes `InMemory*` existem apenas em testes). Adaptadores: `backend/app/db/repos/`.
+- **Idempotência (implementado):** `Idempotency-Key` em `POST`/`PATCH` de compromissos, tarefas e rotinas e nas ações de ocorrência. Chave por `(user_id, key)` com hash de escopo+payload; requisições concorrentes com a mesma chave são serializadas por `pg_advisory_xact_lock`; só respostas de sucesso são armazenadas. `POST .../occurrences/generate` é idempotente por natureza (unicidade `(routine_id, scheduled_for)`).
 
 ## 6. Respostas, paginação e erros
 
@@ -142,19 +144,34 @@ Regras de coordenação:
 
 ## 9. Endpoints implementados
 
-| Serviço | Rota | Resposta | Observação |
-|---|---|---|---|
-| API | `GET /health` | `{"status":"ok","service":"gestao-pessoal-api","version":"0.1.0","environment":"local"}` | Liveness; não consulta banco nem integrações |
-| Web | `GET /healthz` | `{"status":"ok","service":"gestao-pessoal-web"}` | Liveness do servidor Next.js |
+Liveness: `GET /health` (API; não consulta banco) e `GET /healthz` (Web). Rotas de domínio exigem `Authorization: Bearer <JWT Supabase>`; schemas completos em `docs/openapi.json`.
 
-Readiness com dependências reais (banco, Redis, Evolution) será adicionada pela tarefa que introduzir cada dependência e consolidada em GP-12.
+| Método e rota | Descrição |
+|---|---|
+| `POST /api/v1/appointments`, `GET /api/v1/appointments` | Criar; listar (`starts_at_from`, `starts_at_to` semiaberto, `status`, `limit`, `offset`) |
+| `GET/PATCH /api/v1/appointments/{id}` | Ler; editar título/descrição/local |
+| `POST /api/v1/appointments/{id}/reschedule` | Reagendar (`starts_at`, `ends_at?`; fim ausente limpa o anterior) |
+| `POST /api/v1/appointments/{id}/cancel` | Cancelar (transição de estado, `reason?`) |
+| `POST/GET /api/v1/tasks` | Criar; listar (filtros em `openapi.json`) |
+| `GET/PATCH /api/v1/tasks/{id}` | Ler; editar |
+| `POST /api/v1/tasks/{id}/complete`, `/reopen`, `/cancel` | Concluir (`completed_at?`), reabrir, cancelar |
+| `POST/GET /api/v1/routines`, `GET/PATCH /api/v1/routines/{id}` | Criar; listar (`active`); ler; editar título/regra |
+| `POST /api/v1/routines/{id}/activate`, `/deactivate` | Ativar/desativar |
+| `POST /api/v1/routines/{id}/occurrences/generate` | Materializa ocorrências `pending` em `[window_start, window_end)` (até 366 dias) |
+| `GET /api/v1/routines/{id}/occurrences` | Lista (`scheduled_for_from/to`, `status`) |
+| `POST /api/v1/routines/{id}/occurrences/{oid}/complete`, `/skip`, `/reopen` | Registro explícito do resultado |
+
+**Representação de ocorrências:** `scheduled_for` é instante UTC na API e **data local** (`date`) no banco; ver ADR-003. `sync_status` de compromisso é `pending` ao criar (Google ainda não implementado); `sync_to_calendar` de tarefa só é verdadeiro por escolha explícita.
+
+**Lacunas:** não há endpoints de perfil (`profiles`), `notification_preferences` nem `integrations`; o frontend exibe o fuso detectado no navegador e informa a indisponibilidade. Não há endpoint de leitura da auditoria (gravada em `activity_log`).
 
 ## 10. Contratos ainda abertos
 
-- [ ] Mecanismo exato de verificação do JWT Supabase (JWKS assimétrico vs. segredo legado) e papel de conexão ao banco — **GP-03**.
-- [ ] Estratégia de migrations, RLS e armazenamento de chaves de idempotência — **GP-03**.
-- [ ] Rotas, schemas e filtros concretos de compromissos, tarefas e rotinas — **GP-04**.
-- [ ] Representação de recorrência e semântica de fuso/DST — **GP-04/GP-09** (ADR-003).
+- [x] JWT Supabase (JWKS assimétrico RS256/ES256) e papel `app_backend` com RLS (validação com token real: ver `docs/TAREFAS.md`).
+- [x] Migrations, RLS e idempotência (reconciliação do histórico de migrations pendente: `supabase/README.md`).
+- [x] Rotas, schemas e filtros de compromissos, tarefas e rotinas (seção 9).
+- [x] Representação de recorrência (ADR-003). Semântica de DST na execução assíncrona: GP-09.
+- [ ] Endpoints de perfil e preferências de notificação.
 - [ ] Comandos/eventos de integração, outbox ou equivalente e `sync_status` final — **GP-03/GP-06**.
 - [ ] Schemas de interpretação de IA, estados de conversação e desambiguação — **GP-08**.
 - [ ] Payloads internos dos workers e política de retries — **GP-09** (ADR-004).

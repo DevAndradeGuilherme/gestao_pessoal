@@ -189,7 +189,8 @@ def test_failed_write_is_not_memorized_as_idempotent(make_api):
 # -- integração ainda indisponível ---------------------------------------------------------
 
 
-def test_without_persistence_wiring_domain_routes_fail_closed(app, user_a):
+def test_without_persistence_wiring_domain_routes_fail_closed(app, user_a, monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     from fastapi.testclient import TestClient  # noqa: PLC0415
 
     from app.auth.dependencies import get_current_user  # noqa: PLC0415

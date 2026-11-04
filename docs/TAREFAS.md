@@ -1,21 +1,21 @@
 # Tarefas de desenvolvimento — quadro mestre
 
 **Status possíveis:** `não iniciada`, `em execução`, `bloqueada`, `em revisão`, `concluída`.  
-**Situação:** GP-01 e GP-02 `em revisão`; demais `não iniciada`.  
+**Situação:** GP-01 e GP-02 `em revisão`; GP-03, GP-04 e GP-05 `em revisão` (integradas em `integrate/f1-core`, validação com JWT/login reais pendente); demais `não iniciada`.  
 **Regra:** os itens abaixo são escopos para futuros prompts, **não prompts de implementação**.
 
 | ID | Fase | Entrega agrupada | Agente / modelo recomendado | Dependências | Ação manual antes | Status |
 |---|---|---|---|---|---|---|
 | GP-01 | F0 | Bootstrap Git, estrutura e regras dos agentes | Claude Code / Sonnet | — | Confirmar clone e acesso de escrita | em revisão |
 | GP-02 | F0 | Contratos, skeletons, ferramentas de teste e CI mínimo | Claude Code / Sonnet | GP-01 | Nenhuma, salvo escolha de runner CI | em revisão |
-| GP-03 | F1 | Schema, migrations, RLS e autenticação | Codex / medium | GP-02 | Provisionar Supabase e configurar segredos localmente | não iniciada |
-| GP-04 | F1 | Backend de domínio + CRUD de compromissos, tarefas e rotinas | Claude Code / Sonnet | GP-02 e contratos GP-03 | Nenhuma para mocks; acesso DB para integração real | não iniciada |
-| GP-05 | F1 | Frontend de agenda, tarefas, rotinas e perfil | Codex / medium | GP-02; contratos GP-03/04 | Nenhuma para implementação local | não iniciada |
+| GP-03 | F1 | Schema, migrations, RLS e autenticação | Codex / medium | GP-02 | Provisionar Supabase e configurar segredos localmente | em revisão |
+| GP-04 | F1 | Backend de domínio + CRUD de compromissos, tarefas e rotinas | Claude Code / Sonnet | GP-02 e contratos GP-03 | Nenhuma para mocks; acesso DB para integração real | em revisão |
+| GP-05 | F1 | Frontend de agenda, tarefas, rotinas e perfil | Codex / medium | GP-02; contratos GP-03/04 | Nenhuma para implementação local | em revisão |
 | GP-06 | F2 | Integração Google Calendar, OAuth, sync e reconciliação | Codex / medium | GP-03/04 | Criar/configurar OAuth no Google Cloud | não iniciada |
 | GP-07 | F2 | Canal WhatsApp, webhook seguro, autorização e respostas | Claude Code / Sonnet | GP-03/04 | Disponibilizar Evolution API e emparelhar WhatsApp | não iniciada |
 | GP-08 | F2 | Interpretador OpenAI estruturado, ambiguidades e orquestração | Codex / medium | GP-04/07 (interface) | Configurar API key OpenAI e limite de gasto | não iniciada |
 | GP-09 | F3 | Celery/Redis, agendamentos, lembretes, resumos e recorrência | Codex / medium | GP-03/04/07 | Nenhuma para testes locais; Redis no ambiente de execução | não iniciada |
-| GP-10 | F3 | Migração financeira progressiva + testes de regressão | Claude Code / Sonnet (Opus se necessário) | GP-04 | Acesso leitura ao repositório financeiro; aprovar migrações com risco | não iniciada |
+| GP-10 | F3 | Migração financeira progressiva + testes de regressão | Claude Code / Sonnet (Opus se necessário) | GP-04 | Acesso leitura ao repositório financeiro; aprovar migrações com risco | em revisão |
 | GP-11 | F4 | Integração ponta a ponta, QA, segurança, RLS e falhas | Codex / high quando necessário | GP-05 a GP-10 | Disponibilizar contas/ambiente de homologação | não iniciada |
 | GP-12 | F4 | Infra, deploy VPS, backups, observabilidade e aceite final | Claude Code / Sonnet | GP-11 | VPS, DNS, segredos e aprovação explícita do deploy | não iniciada |
 
@@ -33,6 +33,11 @@
 ### GP-03 — Banco e autenticação
 - Modelar usuários, compromissos, tarefas, rotinas, ocorrências, lembretes, eventos recebidos e auditoria conforme contexto; Supabase Auth e isolamento.
 - Aceite: migrations reproduzíveis, testes RLS/autorização e configuração segura de segredos.
+
+### GP-F1-INT — Integração da Fase 1 (branch `integrate/f1-core`, 03/11/2026, Claude Code)
+- Entregue: merge sem conflitos de GP-03, GP-04 e GP-05; adaptadores PostgreSQL (`backend/app/db/repos/`) ligados por `get_stores` (transação por requisição, RLS, auditoria e idempotência atômicas, fail-closed); frontend consumindo a API (`src/lib/api/domain.ts`, `src/components/live-views.tsx`); `docs/CONTRATOS.md`, ADR-003/ADR-004 parcial, `docs/openapi.json`.
+- Evidência: ver relatório de entrega (pytest com PostgreSQL real, Vitest, build). **Pendente de validação real:** login Supabase pelo navegador, JWT real (`tests/integration/test_real_jwt.py`) e E2E web — dependem de credenciais das contas de teste.
+- Pendente: reconciliação do histórico de migrations (`supabase/README.md`), endpoints de perfil/preferências, pool de conexões, primeira execução do CI.
 
 ### GP-04 — Domínio e API
 - Criar/consultar/editar/cancelar compromissos; criar/concluir/reabrir tarefas; definir/consultar rotinas; regras de validação, timezone e auditoria.

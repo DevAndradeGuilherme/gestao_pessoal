@@ -3,12 +3,18 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { authenticatedApiFetch, getSupabase, isSupabaseConfigured } from "@/lib/auth";
-import { ApiError } from "@/lib/api/client";
-import type { HealthResponse } from "@/lib/api/types";
+import { getSupabase, isSupabaseConfigured } from "@/lib/auth";
+import { browserTimezone } from "@/lib/time";
 import { readDemoState, writeDemoState } from "@/lib/demo/store";
 import type { DemoState } from "@/lib/demo/types";
 import { AgendaView, TodayView, TasksView, RoutinesView, SettingsView } from "./workspace-views";
+import {
+  LiveAgendaView,
+  LiveRoutinesView,
+  LiveSettingsView,
+  LiveTasksView,
+  LiveTodayView,
+} from "./live-views";
 
 export type Section = "hoje" | "agenda" | "tarefas" | "rotinas" | "configuracoes";
 
@@ -28,9 +34,8 @@ export function Workspace({ section }: { section: Section }) {
   const [state, setState] = useState<DemoState | null>(null);
   const [email, setEmail] = useState("");
   const [flash, setFlash] = useState("");
-  const [apiHealth, setApiHealth] = useState<"checking" | "ok" | "error" | "unauthenticated">(
-    "checking",
-  );
+  const timezone = browserTimezone();
+  const authLost = useCallback(() => setAccess("denied"), []);
 
   useEffect(() => {
     let active = true;
@@ -53,18 +58,6 @@ export function Workspace({ section }: { section: Section }) {
       else {
         setEmail(data.session.user.email ?? "Minha conta");
         setAccess("authenticated");
-        authenticatedApiFetch<HealthResponse>("/health")
-          .then(() => {
-            if (active) setApiHealth("ok");
-          })
-          .catch((requestError: unknown) => {
-            if (!active) return;
-            setApiHealth(
-              requestError instanceof ApiError && requestError.body.code === "unauthenticated"
-                ? "unauthenticated"
-                : "error",
-            );
-          });
       }
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -185,19 +178,11 @@ export function Workspace({ section }: { section: Section }) {
           ))}
         </nav>
         <main className="content">
-          {demo ? (
+          {demo && (
             <div className="demo-banner" role="status">
               <strong>Modo de demonstração</strong>
               <span>
                 Os dados são exemplos locais deste navegador. Nenhuma alteração é enviada à API.
-              </span>
-            </div>
-          ) : (
-            <div className="demo-banner" role="status">
-              <strong>API de domínio pendente</strong>
-              <span>
-                Sua sessão está ativa, mas GP-04 ainda não publicou os contratos dos recursos. Os
-                dados pessoais não são exibidos aqui.
               </span>
             </div>
           )}
@@ -209,7 +194,7 @@ export function Workspace({ section }: { section: Section }) {
               </button>
             </div>
           )}
-          {demo && state ? (
+          {demo && state && (
             <>
               {section === "hoje" && <TodayView state={state} save={save} />}
               {section === "agenda" && <AgendaView state={state} save={save} />}
@@ -219,30 +204,25 @@ export function Workspace({ section }: { section: Section }) {
                 <SettingsView state={state} save={save} email={email} />
               )}
             </>
-          ) : (
-            <section className="empty-large">
-              <span className="empty-icon">◌</span>
-              <h1>{navigation.find((item) => item.id === section)?.label}</h1>
-              <p>
-                A integração com os dados reais estará disponível após a publicação das rotas e
-                schemas de GP-04.
-              </p>
-              <p
-                className="muted"
-                role={apiHealth === "error" || apiHealth === "unauthenticated" ? "alert" : "status"}
-              >
-                {apiHealth === "checking"
-                  ? "Verificando conexão com o FastAPI…"
-                  : apiHealth === "ok"
-                    ? "FastAPI acessível. Os recursos de domínio ainda não estão publicados."
-                    : apiHealth === "unauthenticated"
-                      ? "A sessão não foi aceita pela API. Entre novamente quando GP-03 publicar a validação do token."
-                      : "Não foi possível conectar ao FastAPI. Confira a URL da API e tente novamente mais tarde."}
-              </p>
-              <Link className="button secondary" href="/configuracoes">
-                Ver configurações
-              </Link>
-            </section>
+          )}
+          {!demo && (
+            <>
+              {section === "hoje" && (
+                <LiveTodayView timezone={timezone} notify={setFlash} authLost={authLost} />
+              )}
+              {section === "agenda" && (
+                <LiveAgendaView timezone={timezone} notify={setFlash} authLost={authLost} />
+              )}
+              {section === "tarefas" && (
+                <LiveTasksView timezone={timezone} notify={setFlash} authLost={authLost} />
+              )}
+              {section === "rotinas" && (
+                <LiveRoutinesView timezone={timezone} notify={setFlash} authLost={authLost} />
+              )}
+              {section === "configuracoes" && (
+                <LiveSettingsView email={email} timezone={timezone} />
+              )}
+            </>
           )}
         </main>
       </div>
